@@ -1,0 +1,75 @@
+version: 2
+
+project_name: air
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: air
+    main: ./cmd/air
+    binary: air
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X github.com/levibmackay/air/internal/cli.version={{.Version}}
+
+archives:
+  - id: air
+    formats: [tar.gz]
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+
+release:
+  github:
+    owner: levibmackay
+    name: air
+
+# Publishes a Homebrew cask that installs the prebuilt `air` binary to
+# PATH (not a GUI .app) — GoReleaser deprecated the older `brews`/formula
+# path as of v2.10 in favor of this. Requires a separate "homebrew-tap"
+# repo (levibmackay/homebrew-tap) to exist before this section can actually
+# publish; goreleaser skips it gracefully during a snapshot/local build.
+homebrew_casks:
+  - name: air
+    binaries:
+      - air
+    repository:
+      owner: levibmackay
+      name: homebrew-tap
+    homepage: "https://github.com/levibmackay/air"
+    description: "AIR — the load balancer for AI coding agents"
+
+# Requires a separate "scoop-bucket" repo (levibmackay/scoop-bucket) to
+# exist before this section can actually publish; same graceful-skip
+# behavior as the brews section above.
+scoops:
+  - name: air
+    repository:
+      owner: levibmackay
+      name: scoop-bucket
+    directory: bucket
+    homepage: "https://github.com/levibmackay/air"
+    description: "AIR — the load balancer for AI coding agents"
+    license: "MIT"

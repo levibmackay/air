@@ -48,8 +48,20 @@ go build ./...
 
 `air run [--tui]`, `air resume [--tui]`, `air status`, `air doctor`,
 `air providers`, `air checkpoints`, `air rollback`, `air config`,
-`air config init`. `air logs`, `air benchmark`, and `air update` are still
+`air config init`, `air logs`. `air benchmark` and `air update` are still
 stubs.
+
+## Installing
+
+Not yet published. Once `levibmackay/homebrew-tap` and
+`levibmackay/scoop-bucket` exist, pushing a `v*` tag
+(`.github/workflows/release.yml`) will publish cross-platform binaries via
+GoReleaser, a Homebrew cask, a Scoop manifest, and a
+`ghcr.io/levibmackay/air` Docker image. Until then, build from source:
+
+```bash
+go install github.com/levibmackay/air/cmd/air@latest
+```
 
 ## Documentation
 
