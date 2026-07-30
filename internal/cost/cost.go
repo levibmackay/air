@@ -1,15 +1,20 @@
 // Package cost tracks elapsed time, and — where a provider reports it —
-// token usage and estimated cost, per provider run within a session. None
-// of AIR's current providers (internal/providers/claude, gemini) parse
-// token/cost figures out of their CLI's output yet, so those fields stay
-// zero until a provider plugin populates them; Entry and Ledger exist now so
-// `air status` has a stable shape to report against as that lands.
+// token usage and estimated cost, per provider run within a session.
 package cost
 
 import (
+	"regexp"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/levibmackay/air/internal/checkpoint"
+)
+
+var (
+	reInputTokens  = regexp.MustCompile(`(?i)(?:input|prompt)\s*tokens?:?\s*([0-9,]+)`)
+	reOutputTokens = regexp.MustCompile(`(?i)(?:output|completion)\s*tokens?:?\s*([0-9,]+)`)
+	reCostUSD      = regexp.MustCompile(`(?i)(?:cost|estimated cost):?\s*\$([0-9]+\.[0-9]+)`)
 )
 
 // Entry records usage for one continuous run of a single provider within a
@@ -58,6 +63,20 @@ func (l *Ledger) TotalCostUSD() float64 {
 	return total
 }
 
+// ParseTokensAndCost extracts token counts and cost from provider output.
+func ParseTokensAndCost(output string) (input, outputTokens int, costUSD float64) {
+	if matches := reInputTokens.FindStringSubmatch(output); len(matches) > 1 {
+		input, _ = strconv.Atoi(strings.ReplaceAll(matches[1], ",", ""))
+	}
+	if matches := reOutputTokens.FindStringSubmatch(output); len(matches) > 1 {
+		outputTokens, _ = strconv.Atoi(strings.ReplaceAll(matches[1], ",", ""))
+	}
+	if matches := reCostUSD.FindStringSubmatch(output); len(matches) > 1 {
+		costUSD, _ = strconv.ParseFloat(matches[1], 64)
+	}
+	return input, outputTokens, costUSD
+}
+
 // FromCheckpoints builds a Ledger from a session's checkpoint history
 // (oldest first, as returned by checkpoint.Store.List). Consecutive
 // checkpoints from the same provider collapse into a single Entry spanning
@@ -69,17 +88,33 @@ func FromCheckpoints(checkpoints []*checkpoint.Checkpoint) *Ledger {
 		return ledger
 	}
 
+	updateEntryMetrics := func(entry *Entry, cp *checkpoint.Checkpoint) {
+		in, out, costVal := ParseTokensAndCost(cp.TerminalOutput)
+		if in > entry.InputTokens {
+			entry.InputTokens = in
+		}
+		if out > entry.OutputTokens {
+			entry.OutputTokens = out
+		}
+		if costVal > entry.EstimatedCostUSD {
+			entry.EstimatedCostUSD = costVal
+		}
+	}
+
 	current := Entry{
 		Provider:  checkpoints[0].Provider,
 		StartedAt: checkpoints[0].Created,
 		EndedAt:   checkpoints[0].Created,
 	}
+	updateEntryMetrics(&current, checkpoints[0])
+
 	for _, cp := range checkpoints[1:] {
 		if cp.Provider != current.Provider {
 			ledger.Entries = append(ledger.Entries, current)
 			current = Entry{Provider: cp.Provider, StartedAt: cp.Created}
 		}
 		current.EndedAt = cp.Created
+		updateEntryMetrics(&current, cp)
 	}
 	ledger.Entries = append(ledger.Entries, current)
 

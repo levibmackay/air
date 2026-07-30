@@ -23,8 +23,8 @@ func TestFromCheckpointsEmpty(t *testing.T) {
 
 func TestFromCheckpointsGroupsByProvider(t *testing.T) {
 	checkpoints := []*checkpoint.Checkpoint{
-		{Provider: "claude", Created: at(0)},
-		{Provider: "claude", Created: at(60)},
+		{Provider: "claude", Created: at(0), TerminalOutput: "Input tokens: 1,000\nOutput tokens: 500\nCost: $0.05"},
+		{Provider: "claude", Created: at(60), TerminalOutput: "Input tokens: 2,000\nOutput tokens: 800\nCost: $0.10"},
 		{Provider: "claude", Created: at(120)},
 		{Provider: "gemini", Created: at(180)},
 		{Provider: "gemini", Created: at(240)},
@@ -41,6 +41,12 @@ func TestFromCheckpointsGroupsByProvider(t *testing.T) {
 	}
 	if claudeEntry.Duration() != 120*time.Second {
 		t.Errorf("claude Duration() = %v, want 120s", claudeEntry.Duration())
+	}
+	if claudeEntry.InputTokens != 2000 || claudeEntry.OutputTokens != 800 {
+		t.Errorf("claude tokens = (%d, %d), want (2000, 800)", claudeEntry.InputTokens, claudeEntry.OutputTokens)
+	}
+	if claudeEntry.EstimatedCostUSD != 0.10 {
+		t.Errorf("claude cost = %v, want 0.10", claudeEntry.EstimatedCostUSD)
 	}
 
 	geminiEntry := ledger.Entries[1]
@@ -68,5 +74,24 @@ func TestLedgerTotals(t *testing.T) {
 	}
 	if got := ledger.TotalCostUSD(); got < 0.2999 || got > 0.3001 {
 		t.Errorf("TotalCostUSD() = %v, want ~0.30", got)
+	}
+}
+
+func TestParseTokensAndCost(t *testing.T) {
+	sample := `
+Processing task...
+Prompt tokens: 1,500
+Completion tokens: 350
+Estimated cost: $0.045
+`
+	in, out, cost := ParseTokensAndCost(sample)
+	if in != 1500 {
+		t.Errorf("input tokens = %d, want 1500", in)
+	}
+	if out != 350 {
+		t.Errorf("output tokens = %d, want 350", out)
+	}
+	if cost != 0.045 {
+		t.Errorf("cost = %v, want 0.045", cost)
 	}
 }
