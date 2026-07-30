@@ -41,15 +41,18 @@ func TestModelHandlesProviderStartedEvent(t *testing.T) {
 
 func TestModelHandlesCheckpointEvent(t *testing.T) {
 	m := newTestModel()
-	cp := &checkpoint.Checkpoint{TerminalOutput: "line one\nline two\n"}
+	cp := &checkpoint.Checkpoint{TerminalOutput: "line one\nline two\nPrompt tokens: 500\nCompletion tokens: 100\nEstimated cost: $0.02\n"}
 	updated, _ := m.Update(router.Event{Type: router.EventCheckpoint, Provider: "claude", Checkpoint: cp})
 	m2 := updated.(model)
 
 	if m2.checkpoints != 1 {
 		t.Errorf("checkpoints = %d, want 1", m2.checkpoints)
 	}
-	if len(m2.outputTail) != 2 || m2.outputTail[0] != "line one" || m2.outputTail[1] != "line two" {
-		t.Errorf("outputTail = %v, want [line one, line two]", m2.outputTail)
+	if m2.inputTokens != 500 || m2.outputTokens != 100 {
+		t.Errorf("tokens = (%d, %d), want (500, 100)", m2.inputTokens, m2.outputTokens)
+	}
+	if !strings.Contains(m2.View(), "tokens:") || !strings.Contains(m2.View(), "500 in / 100 out") {
+		t.Errorf("View() missing token stats: %s", m2.View())
 	}
 }
 

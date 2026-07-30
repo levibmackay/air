@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/levibmackay/air/internal/checkpoint"
+	"github.com/levibmackay/air/internal/cost"
 	"github.com/levibmackay/air/internal/router"
 )
 
@@ -39,12 +40,15 @@ type model struct {
 	sessionID string
 	objective string
 
-	provider    string
-	startedAt   time.Time
-	checkpoints int
-	lastError   string
-	statusLog   []string
-	outputTail  []string
+	provider     string
+	startedAt    time.Time
+	checkpoints  int
+	lastError    string
+	statusLog    []string
+	outputTail   []string
+	inputTokens  int
+	outputTokens int
+	costUSD      float64
 
 	done   bool
 	result *checkpoint.Checkpoint
@@ -127,6 +131,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.checkpoints++
 			if msg.Checkpoint != nil {
 				m.setOutputTail(msg.Checkpoint.TerminalOutput)
+				in, out, cUSD := cost.ParseTokensAndCost(msg.Checkpoint.TerminalOutput)
+				if in > m.inputTokens {
+					m.inputTokens = in
+				}
+				if out > m.outputTokens {
+					m.outputTokens = out
+				}
+				if cUSD > m.costUSD {
+					m.costUSD = cUSD
+				}
 			}
 		case router.EventProviderFailed:
 			if msg.Checkpoint != nil && len(msg.Checkpoint.Errors) > 0 {
@@ -172,6 +186,12 @@ func (m model) View() string {
 	b.WriteString(labelStyle.Render("provider:    ") + status + "\n")
 	b.WriteString(labelStyle.Render("elapsed:     ") + valueStyle.Render(time.Since(m.startedAt).Round(time.Second).String()) + "\n")
 	b.WriteString(labelStyle.Render("checkpoints: ") + valueStyle.Render(fmt.Sprintf("%d", m.checkpoints)) + "\n")
+	if m.inputTokens > 0 || m.outputTokens > 0 || m.costUSD > 0 {
+		b.WriteString(labelStyle.Render("tokens:      ") + valueStyle.Render(fmt.Sprintf("%d in / %d out", m.inputTokens, m.outputTokens)) + "\n")
+		if m.costUSD > 0 {
+			b.WriteString(labelStyle.Render("est. cost:   ") + valueStyle.Render(fmt.Sprintf("$%.4f", m.costUSD)) + "\n")
+		}
+	}
 	if m.lastError != "" {
 		b.WriteString(errorStyle.Render("last issue:  "+m.lastError) + "\n")
 	}
