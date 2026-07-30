@@ -41,6 +41,7 @@ type Router struct {
 	checkpointInterval time.Duration
 	pollInterval       time.Duration
 	logger             *zap.Logger
+	events             chan<- Event
 }
 
 // Option configures a Router.
@@ -136,6 +137,7 @@ func (r *Router) run(ctx context.Context, sessionID, objective string, startCP *
 			lastErr = err
 			continue
 		}
+		r.emit(Event{Type: EventProviderStarted, Provider: p.Name()})
 
 		cp, out, err := r.monitor(ctx, p, sess, sessionID, objective, task.WorkDir)
 		if err != nil {
@@ -144,9 +146,11 @@ func (r *Router) run(ctx context.Context, sessionID, objective string, startCP *
 
 		switch out {
 		case outcomeCompleted:
+			r.emit(Event{Type: EventCompleted, Provider: p.Name(), Checkpoint: cp})
 			return cp, nil
 		case outcomeFailed:
 			lastCP = cp
+			r.emit(Event{Type: EventProviderFailed, Provider: p.Name(), Checkpoint: cp})
 			if n := len(cp.Errors); n > 0 {
 				lastErr = fmt.Errorf("provider %s failed: %s", p.Name(), cp.Errors[n-1])
 			} else {
@@ -174,6 +178,7 @@ func (r *Router) monitor(ctx context.Context, p agent.Agent, sess *agent.Session
 		if err := r.store.Save(cp); err != nil {
 			r.logger.Warn("failed to save checkpoint", zap.Error(err))
 		}
+		r.emit(Event{Type: EventCheckpoint, Provider: p.Name(), Checkpoint: cp})
 		return cp, out, nil
 	}
 
@@ -207,6 +212,7 @@ func (r *Router) monitor(ctx context.Context, p agent.Agent, sess *agent.Session
 			if err := r.store.Save(cp); err != nil {
 				r.logger.Warn("failed to save periodic checkpoint", zap.Error(err))
 			}
+			r.emit(Event{Type: EventCheckpoint, Provider: p.Name(), Checkpoint: cp})
 
 		case <-pollTicker.C:
 			output := sess.Output()

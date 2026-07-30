@@ -21,8 +21,10 @@ func newSessionID() string {
 // buildRouter loads config, resolves its provider list through the built-in
 // registry, and returns a Router plus the checkpoint store it's using —
 // the wiring shared by `air run`, `air resume`, `air doctor`, and
-// `air providers`.
-func buildRouter() (*router.Router, *checkpoint.Store, error) {
+// `air providers`. Pass a non-nil events channel to drive a live TUI (see
+// internal/tui); doing so also suppresses the structured logger, since its
+// JSON output would otherwise corrupt the dashboard's terminal rendering.
+func buildRouter(events chan router.Event) (*router.Router, *checkpoint.Store, error) {
 	cfg, err := config.Load()
 	if err != nil {
 		return nil, nil, fmt.Errorf("load config: %w", err)
@@ -38,12 +40,14 @@ func buildRouter() (*router.Router, *checkpoint.Store, error) {
 		return nil, nil, err
 	}
 
-	logger, err := zap.NewProduction()
-	if err != nil {
-		logger = zap.NewNop()
+	opts := []router.Option{router.WithCheckpointInterval(cfg.CheckpointInterval)}
+	if events != nil {
+		opts = append(opts, router.WithEvents(events), router.WithLogger(zap.NewNop()))
+	} else if logger, err := zap.NewProduction(); err == nil {
+		opts = append(opts, router.WithLogger(logger))
 	}
 
-	r := router.New(agents, store, router.WithCheckpointInterval(cfg.CheckpointInterval), router.WithLogger(logger))
+	r := router.New(agents, store, opts...)
 	return r, store, nil
 }
 
