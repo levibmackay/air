@@ -46,14 +46,22 @@ go build ./...
 
 ## Commands
 
-`air run`, `air resume`, `air status`, `air doctor`, `air providers`,
-`air checkpoints`, `air rollback`, `air logs`, `air config`, `air benchmark`,
-`air update`.
+`air run [--tui]`, `air resume [--tui]`, `air status`, `air doctor`,
+`air providers`, `air checkpoints`, `air rollback`, `air config`,
+`air config init`. `air logs`, `air benchmark`, and `air update` are still
+stubs.
+
+## Documentation
+
+- [Architecture design](docs/superpowers/specs/2026-07-30-air-architecture-design.md)
+- [Developer guide](docs/developer-guide.md) — building, testing, repo layout
+- [Plugin guide](docs/plugin-guide.md) — adding a new provider
 
 ## Contributing
 
 Adding a provider requires only implementing `agent.Agent` — no router
-changes needed. See `internal/providers/` for existing plugins.
+changes needed. See the [plugin guide](docs/plugin-guide.md) and
+`internal/providers/` for existing plugins.
 
 ## License
 
