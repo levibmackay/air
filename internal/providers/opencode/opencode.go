@@ -1,14 +1,107 @@
-// Package opencode implements the agent.Agent interface for OpenCode. Not
-// yet implemented — registered as a known provider so it shows up in
-// `air providers`/`air doctor`, but the router will never select it.
+// Package opencode implements the agent.Agent interface for OpenCode,
+// driven non-interactively via `opencode run [options] "<prompt>"`.
 package opencode
 
 import (
+	"context"
+	"sync"
+
 	"github.com/levibmackay/air/internal/agent"
-	"github.com/levibmackay/air/internal/providers/base"
+	"github.com/levibmackay/air/internal/checkpoint"
+	"github.com/levibmackay/air/internal/detect"
+	"github.com/levibmackay/air/internal/providers/cliagent"
+	"github.com/levibmackay/air/internal/summarizer"
 )
 
-// New returns a not-yet-implemented placeholder for OpenCode.
-func New() agent.Agent {
-	return base.Unimplemented{NameValue: "opencode", Binary: "opencode"}
+// Provider implements agent.Agent for OpenCode CLI.
+type Provider struct {
+	name    string
+	model   string
+	runner  cliagent.Runner
+	mu      sync.Mutex
+	cancels map[*agent.Session]context.CancelFunc
 }
+
+// New returns an OpenCode provider. Optional model parameter can be specified
+// (e.g. "claude-3-5-sonnet").
+func New(model ...string) agent.Agent {
+	m := ""
+	name := "opencode"
+	if len(model) > 0 && model[0] != "" {
+		m = model[0]
+		name = "opencode:" + m
+	}
+	return &Provider{
+		name:    name,
+		model:   m,
+		runner:  cliagent.Runner{Binary: "opencode"},
+		cancels: make(map[*agent.Session]context.CancelFunc),
+	}
+}
+
+func (p *Provider) Name() string { return p.name }
+
+func (p *Provider) DetectInstalled() bool { return p.runner.DetectInstalled() }
+
+func (p *Provider) DetectVersion() (string, error) { return p.runner.DetectVersion() }
+
+func (p *Provider) IsAvailable() (bool, error) { return p.runner.DetectInstalled(), nil }
+
+func (p *Provider) Start(ctx context.Context, task agent.Task) (*agent.Session, error) {
+	prompt := task.Objective
+	if task.ResumePrompt != "" {
+		prompt = task.ResumePrompt
+	}
+	return p.launch(ctx, prompt, task.WorkDir)
+}
+
+func (p *Provider) Resume(ctx context.Context, cp *checkpoint.Checkpoint) (*agent.Session, error) {
+	return p.launch(ctx, summarizer.Compress(cp), cp.WorkDir)
+}
+
+func (p *Provider) launch(ctx context.Context, prompt, dir string) (*agent.Session, error) {
+	args := []string{"run"}
+	if p.model != "" {
+		args = append(args, "--model", p.model)
+	}
+	args = append(args, prompt)
+
+	runCtx, cancel := context.WithCancel(ctx)
+	sess, err := p.runner.Launch(runCtx, args, dir)
+	if err != nil {
+		cancel()
+		return nil, err
+	}
+	p.mu.Lock()
+	p.cancels[sess] = cancel
+	p.mu.Unlock()
+	return sess, nil
+}
+
+func (p *Provider) Stop(session *agent.Session) error {
+	p.mu.Lock()
+	cancel, ok := p.cancels[session]
+	delete(p.cancels, session)
+	p.mu.Unlock()
+	if ok {
+		cancel()
+	}
+	return nil
+}
+
+func (p *Provider) HealthCheck(session *agent.Session) agent.HealthStatus {
+	return agent.HealthStatus{Healthy: true}
+}
+
+func (p *Provider) DetectRateLimit(output string) *agent.RateLimitInfo {
+	switch detect.Classify(output) {
+	case detect.RateLimit, detect.Unavailable:
+		return &agent.RateLimitInfo{Message: p.name + " CLI output matched a rate-limit/availability pattern"}
+	default:
+		return nil
+	}
+}
+
+func (p *Provider) DetectCompletion(output string) bool { return false }
+
+var _ agent.Agent = (*Provider)(nil)

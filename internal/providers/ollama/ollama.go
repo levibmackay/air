@@ -1,26 +1,105 @@
 // Package ollama implements the agent.Agent interface for locally-hosted
-// Ollama models. Not yet implemented — registered as a known provider so
-// entries like "ollama:qwen3-coder:30b" resolve to a placeholder that shows
-// up in `air providers`/`air doctor`, but the router will never select it.
-//
-// `ollama agent` (its agentic, tool-using mode — the closest match to
-// Claude Code/Gemini CLI) requires a real TTY and errors out under
-// cliagent.Runner's piped stdout/stderr, so it can't be wired up the same
-// way as those. Making this real needs either a pty (e.g.
-// github.com/creack/pty) inside Runner, or falling back to plain
-// `ollama run <model> <prompt>`, which works headless but has no tool use.
+// Ollama models, driven non-interactively via `ollama run <model> "<prompt>"`.
 package ollama
 
 import (
+	"context"
+	"sync"
+
 	"github.com/levibmackay/air/internal/agent"
-	"github.com/levibmackay/air/internal/providers/base"
+	"github.com/levibmackay/air/internal/checkpoint"
+	"github.com/levibmackay/air/internal/detect"
+	"github.com/levibmackay/air/internal/providers/cliagent"
+	"github.com/levibmackay/air/internal/summarizer"
 )
 
-// New returns a not-yet-implemented placeholder for the given Ollama model.
-func New(model string) agent.Agent {
-	name := "ollama"
-	if model != "" {
-		name = "ollama:" + model
-	}
-	return base.Unimplemented{NameValue: name, Binary: "ollama"}
+const defaultModel = "qwen2.5-coder"
+
+// Provider implements agent.Agent for Ollama.
+type Provider struct {
+	name    string
+	model   string
+	runner  cliagent.Runner
+	mu      sync.Mutex
+	cancels map[*agent.Session]context.CancelFunc
 }
+
+// New returns an Ollama provider. Model parameter specifies which Ollama model
+// to invoke (e.g. "qwen2.5-coder:30b"). If omitted/empty, defaults to "qwen2.5-coder".
+func New(model string) agent.Agent {
+	m := model
+	if m == "" {
+		m = defaultModel
+	}
+	name := "ollama:" + m
+
+	return &Provider{
+		name:    name,
+		model:   m,
+		runner:  cliagent.Runner{Binary: "ollama"},
+		cancels: make(map[*agent.Session]context.CancelFunc),
+	}
+}
+
+func (p *Provider) Name() string { return p.name }
+
+func (p *Provider) DetectInstalled() bool { return p.runner.DetectInstalled() }
+
+func (p *Provider) DetectVersion() (string, error) { return p.runner.DetectVersion() }
+
+func (p *Provider) IsAvailable() (bool, error) { return p.runner.DetectInstalled(), nil }
+
+func (p *Provider) Start(ctx context.Context, task agent.Task) (*agent.Session, error) {
+	prompt := task.Objective
+	if task.ResumePrompt != "" {
+		prompt = task.ResumePrompt
+	}
+	return p.launch(ctx, prompt, task.WorkDir)
+}
+
+func (p *Provider) Resume(ctx context.Context, cp *checkpoint.Checkpoint) (*agent.Session, error) {
+	return p.launch(ctx, summarizer.Compress(cp), cp.WorkDir)
+}
+
+func (p *Provider) launch(ctx context.Context, prompt, dir string) (*agent.Session, error) {
+	args := []string{"run", p.model, prompt}
+
+	runCtx, cancel := context.WithCancel(ctx)
+	sess, err := p.runner.Launch(runCtx, args, dir)
+	if err != nil {
+		cancel()
+		return nil, err
+	}
+	p.mu.Lock()
+	p.cancels[sess] = cancel
+	p.mu.Unlock()
+	return sess, nil
+}
+
+func (p *Provider) Stop(session *agent.Session) error {
+	p.mu.Lock()
+	cancel, ok := p.cancels[session]
+	delete(p.cancels, session)
+	p.mu.Unlock()
+	if ok {
+		cancel()
+	}
+	return nil
+}
+
+func (p *Provider) HealthCheck(session *agent.Session) agent.HealthStatus {
+	return agent.HealthStatus{Healthy: true}
+}
+
+func (p *Provider) DetectRateLimit(output string) *agent.RateLimitInfo {
+	switch detect.Classify(output) {
+	case detect.RateLimit, detect.Unavailable:
+		return &agent.RateLimitInfo{Message: p.name + " CLI output matched a rate-limit/availability pattern"}
+	default:
+		return nil
+	}
+}
+
+func (p *Provider) DetectCompletion(output string) bool { return false }
+
+var _ agent.Agent = (*Provider)(nil)

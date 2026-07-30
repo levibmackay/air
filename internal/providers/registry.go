@@ -23,10 +23,10 @@ func Registry() *agent.Registry {
 	r := agent.NewRegistry()
 
 	r.Register("claude", func(string) (agent.Agent, error) { return claude.New(), nil })
-	r.Register("codex", func(string) (agent.Agent, error) { return codex.New(), nil })
+	r.Register("codex", func(param string) (agent.Agent, error) { return codex.New(param), nil })
 	r.Register("gemini", func(string) (agent.Agent, error) { return gemini.New(), nil })
-	r.Register("opencode", func(string) (agent.Agent, error) { return opencode.New(), nil })
-	r.Register("aider", func(string) (agent.Agent, error) { return aider.New(), nil })
+	r.Register("opencode", func(param string) (agent.Agent, error) { return opencode.New(param), nil })
+	r.Register("aider", func(param string) (agent.Agent, error) { return aider.New(param), nil })
 	r.Register("antigravity", func(string) (agent.Agent, error) { return antigravity.New(), nil })
 	r.Register("ollama", func(param string) (agent.Agent, error) { return ollama.New(param), nil })
 	r.Register("lmstudio", func(param string) (agent.Agent, error) { return lmstudio.New(param), nil })
