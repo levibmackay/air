@@ -15,8 +15,9 @@ air resume
 ## Status
 
 Early development. `run`, `resume`, `doctor`, `providers`, and `checkpoints`
-are wired end-to-end against the Claude Code and Gemini CLIs; the rest of
-the providers are registered but not yet implemented (see below). See
+are wired end-to-end against the Claude Code, Gemini CLI, and Antigravity
+CLIs; the rest of the providers are registered but not yet implemented (see
+below). See
 [`docs/superpowers/specs/2026-07-30-air-architecture-design.md`](docs/superpowers/specs/2026-07-30-air-architecture-design.md)
 for the architecture and phased delivery plan.
 
@@ -26,12 +27,19 @@ for the architecture and phased delivery plan.
 | ------------ | --------------- |
 | Claude Code  | implemented     |
 | Gemini CLI   | implemented     |
+| Antigravity  | implemented, unverified — see below |
 | OpenAI Codex | not implemented |
 | OpenCode     | not implemented |
 | Aider        | not implemented |
-| Antigravity  | not implemented |
-| Ollama       | not implemented |
+| Ollama       | not implemented — `ollama agent` needs a real TTY, so it can't be driven the same way as the others; see `internal/providers/ollama` |
 | LM Studio    | not implemented |
+
+**Antigravity note:** it isn't installed on the machine this was built on,
+so `internal/providers/antigravity` assumes the same `antigravity -p
+"<prompt>"` invocation as Claude Code and Gemini CLI, verified only at the
+Go-wiring level (a fake `antigravity` binary standing in for the real one).
+If the real CLI's flags differ, that's the one line to fix
+(`internal/providers/antigravity/antigravity.go`).
 
 Every provider is a plugin behind the common `agent.Agent` interface
 (`internal/agent/agent.go`); "not implemented" providers register a
