@@ -19,13 +19,6 @@ type Task struct {
 	WorkDir      string
 }
 
-// Session is a handle to a running provider process.
-type Session struct {
-	Provider  string
-	StartedAt time.Time
-	PID       int
-}
-
 // HealthStatus reports whether a running session is progressing normally.
 type HealthStatus struct {
 	Healthy bool
