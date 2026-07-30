@@ -14,6 +14,7 @@ type Checkpoint struct {
 	Created  time.Time `json:"created"`
 
 	Objective       string   `json:"objective"`
+	WorkDir         string   `json:"work_dir"`
 	CompletedWork   []string `json:"completed_work"`
 	RemainingTasks  []string `json:"remaining_tasks"`
 	GitDiff         string   `json:"git_diff"`

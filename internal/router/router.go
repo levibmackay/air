@@ -83,12 +83,34 @@ func New(providers []agent.Agent, store *checkpoint.Store, opts ...Option) *Rout
 // the run succeeded or every provider was exhausted) alongside an error
 // describing why the run didn't complete, if it didn't.
 func (r *Router) Run(ctx context.Context, sessionID, objective string) (*checkpoint.Checkpoint, error) {
+	return r.run(ctx, sessionID, objective, nil)
+}
+
+// Resume continues a previously-checkpointed session: the first available
+// provider is asked to Resume from cp rather than Start fresh, and the
+// router falls through to later providers exactly as Run does if that
+// provider fails too.
+func (r *Router) Resume(ctx context.Context, cp *checkpoint.Checkpoint) (*checkpoint.Checkpoint, error) {
+	if cp == nil {
+		return nil, errors.New("router: cannot resume a nil checkpoint")
+	}
+	return r.run(ctx, cp.Session, cp.Objective, cp)
+}
+
+// run is the shared implementation behind Run and Resume. startCP is nil
+// for a fresh Run, or the checkpoint to Resume from for the first provider
+// tried; either way, once a provider fails, later providers always resume
+// from whatever checkpoint that failure produced.
+func (r *Router) run(ctx context.Context, sessionID, objective string, startCP *checkpoint.Checkpoint) (*checkpoint.Checkpoint, error) {
 	if len(r.providers) == 0 {
 		return nil, errors.New("router: no providers configured")
 	}
 
 	task := agent.Task{Objective: objective}
-	var lastCP *checkpoint.Checkpoint
+	if startCP != nil {
+		task.WorkDir = startCP.WorkDir
+	}
+	lastCP := startCP
 	var lastErr error
 
 	for _, p := range r.providers {
@@ -164,14 +186,21 @@ func (r *Router) monitor(ctx context.Context, p agent.Agent, sess *agent.Session
 			return cp, outcomeFailed, ctx.Err()
 
 		case <-sess.Done():
+			// A clean process exit (err == nil) is the authoritative success
+			// signal for process-driven providers: DetectCompletion exists to
+			// catch an explicit signal *while* a provider is still running
+			// (see the poll case below), not to second-guess a clean exit.
+			// The one thing we still check is whether the final output
+			// carries a failure signal that didn't produce a non-zero exit
+			// code.
 			output := sess.Output()
 			if err := sess.Err(); err != nil {
 				return finish("unexpected exit: "+err.Error(), outcomeFailed)
 			}
-			if p.DetectCompletion(output) {
-				return finish("", outcomeCompleted)
+			if rl := p.DetectRateLimit(output); rl != nil {
+				return finish("rate limit: "+rl.Message, outcomeFailed)
 			}
-			return finish("provider exited without signaling completion", outcomeFailed)
+			return finish("", outcomeCompleted)
 
 		case <-checkpointTicker.C:
 			cp := r.buildCheckpoint(sessionID, p.Name(), objective, sess.Output(), workDir, "")
@@ -207,6 +236,7 @@ func (r *Router) buildCheckpoint(sessionID, provider, objective, output, workDir
 		Provider:       provider,
 		Created:        time.Now(),
 		Objective:      objective,
+		WorkDir:        workDir,
 		TerminalOutput: output,
 		GitDiff:        captureGitDiff(workDir),
 	}

@@ -5,7 +5,7 @@ the best available agent, monitors it, checkpoints progress, and switches to
 another agent on failure or rate limit — without losing your work.
 
 ```bash
-air "Build me a REST API"
+air run "Build me a REST API"
 ```
 
 ```bash
@@ -14,14 +14,29 @@ air resume
 
 ## Status
 
-Early development. See [`docs/superpowers/specs/2026-07-30-air-architecture-design.md`](docs/superpowers/specs/2026-07-30-air-architecture-design.md)
+Early development. `run`, `resume`, `doctor`, `providers`, and `checkpoints`
+are wired end-to-end against the Claude Code and Gemini CLIs; the rest of
+the providers are registered but not yet implemented (see below). See
+[`docs/superpowers/specs/2026-07-30-air-architecture-design.md`](docs/superpowers/specs/2026-07-30-air-architecture-design.md)
 for the architecture and phased delivery plan.
 
-## Supported providers (planned)
+## Supported providers
 
-Claude Code, OpenAI Codex CLI, Gemini CLI, OpenCode, Aider, Antigravity,
-Ollama, LM Studio — each implemented as a plugin behind a common
-`agent.Agent` interface (`internal/agent/agent.go`).
+| Provider     | Status          |
+| ------------ | --------------- |
+| Claude Code  | implemented     |
+| Gemini CLI   | implemented     |
+| OpenAI Codex | not implemented |
+| OpenCode     | not implemented |
+| Aider        | not implemented |
+| Antigravity  | not implemented |
+| Ollama       | not implemented |
+| LM Studio    | not implemented |
+
+Every provider is a plugin behind the common `agent.Agent` interface
+(`internal/agent/agent.go`); "not implemented" providers register a
+placeholder (`internal/providers/base`) so they show up in `air doctor`/
+`air providers` without being selectable by the router yet.
 
 ## Building
 

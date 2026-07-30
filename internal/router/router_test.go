@@ -158,3 +158,40 @@ func TestRouterContextCancellation(t *testing.T) {
 		t.Errorf("Run() error = %v, want context.DeadlineExceeded", err)
 	}
 }
+
+func TestRouterResumeUsesResumeNotStart(t *testing.T) {
+	p := agent.NewMock("resumer")
+	p.StartFunc = func(ctx context.Context, task agent.Task) (*agent.Session, error) {
+		t.Fatal("Resume() should never call Start()")
+		return nil, nil
+	}
+	p.ResumeFunc = func(ctx context.Context, cp *checkpoint.Checkpoint) (*agent.Session, error) {
+		sess := agent.NewSession("resumer")
+		go func() {
+			sess.AppendOutput("done")
+			sess.MarkDone(nil)
+		}()
+		return sess, nil
+	}
+
+	r := newTestRouter(t, []agent.Agent{p})
+	prior := &checkpoint.Checkpoint{Session: "sess-7", Objective: "finish the API", Provider: "someone-else"}
+
+	cp, err := r.Resume(context.Background(), prior)
+	if err != nil {
+		t.Fatalf("Resume() error = %v", err)
+	}
+	if cp.Session != "sess-7" {
+		t.Errorf("cp.Session = %q, want %q", cp.Session, "sess-7")
+	}
+	if cp.Objective != "finish the API" {
+		t.Errorf("cp.Objective = %q, want %q", cp.Objective, "finish the API")
+	}
+}
+
+func TestRouterResumeNilCheckpoint(t *testing.T) {
+	r := newTestRouter(t, []agent.Agent{agent.NewMock("p")})
+	if _, err := r.Resume(context.Background(), nil); err == nil {
+		t.Fatal("Resume(nil) should error")
+	}
+}

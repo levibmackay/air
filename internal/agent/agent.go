@@ -66,6 +66,10 @@ type Agent interface {
 	DetectRateLimit(output string) *RateLimitInfo
 
 	// DetectCompletion inspects a chunk of provider output and reports
-	// whether the provider considers its task finished.
+	// whether the provider has explicitly signaled it's finished while
+	// still running. For providers that exit when their task is done, a
+	// clean process exit is already treated as success by the router;
+	// this exists for providers (e.g. long-running/interactive sessions)
+	// that need to signal completion without exiting.
 	DetectCompletion(output string) bool
 }
