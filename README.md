@@ -86,3 +86,5 @@ changes needed. See the [plugin guide](docs/plugin-guide.md) and
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+**Last updated:** 2026-07-31
